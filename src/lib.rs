@@ -133,13 +133,16 @@ fn gen_impl(variant_slice: &[VariantInfo], count_variant: Option<syn::Ident>) ->
         quote! {
             impl #rust_name {
                 /// Returns the C enum variant equivalent for the given Rust enum variant.
-                pub fn into_c(&self) -> #c_name {
+                pub fn as_c(&self) -> #c_name {
                     match *self {
                         #(#for_arms)*
                     }
                 }
 
                 /// Waiting for `TryFrom` to be stable. In the meantime, we do this.
+                ///
+                /// # Errors
+                /// * `UnexpectedVariant`, if a variant that should not be returned is encountered
                 pub fn try_from(enum_: #c_name) -> Result<Self> {
                     match enum_ {
                         #(#try_from_arms)*
@@ -152,7 +155,7 @@ fn gen_impl(variant_slice: &[VariantInfo], count_variant: Option<syn::Ident>) ->
         quote! {
             impl #rust_name {
                 /// Returns the C enum variant equivalent for the given Rust enum variant.
-                pub fn into_c(&self) -> #c_name {
+                pub fn as_c(&self) -> #c_name {
                     match *self {
                         #(#for_arms)*
                     }
