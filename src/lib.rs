@@ -1,3 +1,9 @@
+/*!
+A quick and dirty derive macro for use in [nvml-wrapper](https://github.com/Cldfire/nvml-wrapper).
+It is **not for use by the general public**, a status that may or may not change
+in the future.
+*/
+
 #![recursion_limit = "1024"]
 
 extern crate proc_macro;
