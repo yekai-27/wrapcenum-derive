@@ -21,11 +21,16 @@ use syn::NestedMetaItem::*;
 // TODO: Tests.
 // TODO: Maybe clean this up if I feel like it.
 
+// THIS MUST BE USED TO WRAP ENUMS IN CONSTANT FORM
+// See https://docs.rs/bindgen/0.25.1/bindgen/struct.Builder.html#method.constified_enum
+// REASON: https://github.com/rust-lang/rust/issues/36927
+//
 // Use it like this
 //
 // #[derive(EnumWrapper)]
 // #[wrap(c_enum = "libSomeEnum_t")]
-// #[wrap(has_count = "LIB_COUNT_VARIANT")] (optional)
+// // This is used to map an unknown variant returned from C to a default value.
+// #[wrap(default = "LIB_COUNT_VARIANT")] (optional)
 // pub enum SomeEnum {
 //     #[wrap(c_variant = LIB_SOME_VARIANT)]
 //     SomeVariant,
@@ -52,14 +57,17 @@ impl VariantInfo {
         }
     }
 
-    fn tokens_for_eq_c(&self) -> Tokens {
+    fn tokens_for_as_c(&self) -> Tokens {
         let ref rust_name = self.rust_name;
         let ref rust_variant = self.rust_variant;
         let ref c_name = self.c_name;
         let ref c_variant = self.c_variant;
 
+        let mut c_joined = syn::Ident::new(c_name.to_string() + "_" + 
+            &c_variant.to_string());
+
         quote! {
-            #rust_name::#rust_variant => #c_name::#c_variant,
+            #rust_name::#rust_variant => #c_joined,
         }
     }
 
@@ -69,8 +77,11 @@ impl VariantInfo {
         let ref c_name = self.c_name;
         let ref c_variant = self.c_variant;
 
+        let mut c_joined = syn::Ident::new(c_name.to_string() + "_" + 
+            &c_variant.to_string());
+
         quote! {
-            #c_name::#c_variant => #rust_name::#rust_variant,
+            #c_joined => #rust_name::#rust_variant,
         }
     }
 
@@ -80,8 +91,11 @@ impl VariantInfo {
         let ref c_name = self.c_name;
         let ref c_variant = self.c_variant;
 
+        let mut c_joined = syn::Ident::new(c_name.to_string() + "_" + 
+            &c_variant.to_string());
+
         quote! {
-            #c_name::#c_variant => Ok(#rust_name::#rust_variant),
+            #c_joined => Ok(#rust_name::#rust_variant),
         }
     }
 }
@@ -99,7 +113,7 @@ pub fn enum_wrapper(input: TokenStream) -> TokenStream {
 fn wrap_enum(ast: syn::DeriveInput) -> Tokens {
     let rust_name = &ast.ident;
     let c_name: syn::Ident = attr_val_for_str("c_enum", &ast).unwrap().into();
-    let count_variant = attr_val_for_str("has_count", &ast);
+    let default_variant = attr_val_for_str("default", &ast);
 
     match ast.body {
         Enum(variant_vec) => {
@@ -107,7 +121,7 @@ fn wrap_enum(ast: syn::DeriveInput) -> Tokens {
                 VariantInfo::from(v.clone(), c_name.clone(), rust_name.clone())
             }).collect();
             
-            if let Some(v) = count_variant {
+            if let Some(v) = default_variant {
                 gen_impl(&info_vec[..], Some(v.into()))
             } else {
                 gen_impl(&info_vec[..], None)
@@ -118,12 +132,12 @@ fn wrap_enum(ast: syn::DeriveInput) -> Tokens {
 
 }
 
-fn gen_impl(variant_slice: &[VariantInfo], count_variant: Option<syn::Ident>) -> Tokens {
+fn gen_impl(variant_slice: &[VariantInfo], default_variant: Option<syn::Ident>) -> Tokens {
     let ref c_name = variant_slice[0].c_name;
     let ref rust_name = variant_slice[0].rust_name;
 
     let for_arms: Vec<Tokens> = variant_slice.iter().map(|v| {
-        v.tokens_for_eq_c()
+        v.tokens_for_as_c()
     }).collect();
 
     let from_arms: Vec<Tokens> = variant_slice.iter().map(|v| {
@@ -134,29 +148,7 @@ fn gen_impl(variant_slice: &[VariantInfo], count_variant: Option<syn::Ident>) ->
         v.tokens_for_try_from_c()
     }).collect();
 
-    if let Some(v) = count_variant {
-        quote! {
-            impl #rust_name {
-                /// Returns the C enum variant equivalent for the given Rust enum variant.
-                pub fn as_c(&self) -> #c_name {
-                    match *self {
-                        #(#for_arms)*
-                    }
-                }
-
-                /// Waiting for `TryFrom` to be stable. In the meantime, we do this.
-                ///
-                /// # Errors
-                /// * `UnexpectedVariant`, if a variant that should not be returned is encountered
-                pub fn try_from(enum_: #c_name) -> Result<Self> {
-                    match enum_ {
-                        #(#try_from_arms)*
-                        #c_name::#v => Err(Error::from_kind(ErrorKind::UnexpectedVariant)),
-                    }
-                }
-            }
-        }
-    } else {
+    if let Some(v) = default_variant {
         quote! {
             impl #rust_name {
                 /// Returns the C enum variant equivalent for the given Rust enum variant.
@@ -171,6 +163,29 @@ fn gen_impl(variant_slice: &[VariantInfo], count_variant: Option<syn::Ident>) ->
                 fn from(enum_: #c_name) -> Self {
                     match enum_ {
                         #(#from_arms)*
+                        _ => #c_name::#v
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl #rust_name {
+                /// Returns the C enum variant equivalent for the given Rust enum variant.
+                pub fn as_c(&self) -> #c_name {
+                    match *self {
+                        #(#for_arms)*
+                    }
+                }
+
+                /// Waiting for `TryFrom` to be stable. In the meantime, we do this.
+                ///
+                /// # Errors
+                /// * `UnexpectedVariant`, for which you can read the docs for
+                pub fn try_from(enum_: #c_name) -> Result<Self> {
+                    match enum_ {
+                        #(#try_from_arms)*
+                        _ => Err(Error::from_kind(ErrorKind::UnexpectedVariant)),
                     }
                 }
             }
