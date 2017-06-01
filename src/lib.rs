@@ -63,7 +63,7 @@ impl VariantInfo {
         let ref c_name = self.c_name;
         let ref c_variant = self.c_variant;
 
-        let mut c_joined = syn::Ident::new(c_name.to_string() + "_" + 
+        let c_joined = syn::Ident::new(c_name.to_string() + "_" + 
             &c_variant.to_string());
 
         quote! {
@@ -77,7 +77,7 @@ impl VariantInfo {
         let ref c_name = self.c_name;
         let ref c_variant = self.c_variant;
 
-        let mut c_joined = syn::Ident::new(c_name.to_string() + "_" + 
+        let c_joined = syn::Ident::new(c_name.to_string() + "_" + 
             &c_variant.to_string());
 
         quote! {
@@ -91,7 +91,7 @@ impl VariantInfo {
         let ref c_name = self.c_name;
         let ref c_variant = self.c_variant;
 
-        let mut c_joined = syn::Ident::new(c_name.to_string() + "_" + 
+        let c_joined = syn::Ident::new(c_name.to_string() + "_" + 
             &c_variant.to_string());
 
         quote! {
