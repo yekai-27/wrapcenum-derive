@@ -1,6 +1,6 @@
 [package]
 name = "wrapcenum-derive"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Cldfire"]
 description = "Derive macro for nvml-wrapper, not for general use"
 readme = "README.md"
