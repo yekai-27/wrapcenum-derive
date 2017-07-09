@@ -20,6 +20,8 @@ use syn::NestedMetaItem::*;
 
 // TODO: Tests.
 // TODO: Maybe clean this up if I feel like it.
+// TODO: Panic if `c_variant` cannot be found in `wrap` on an enum variant.
+// right now it just appends `this_is_not_to_be_returned` to the name
 
 // THIS MUST BE USED TO WRAP ENUMS IN CONSTANT FORM
 // See https://docs.rs/bindgen/0.25.1/bindgen/struct.Builder.html#method.constified_enum
@@ -91,7 +93,7 @@ impl VariantInfo {
         let ref c_name = self.c_name;
         let ref c_variant = self.c_variant;
 
-        let c_joined = syn::Ident::new(c_name.to_string() + "_" + 
+        let c_joined = syn::Ident::new(c_name.to_string() + "_" +
             &c_variant.to_string());
 
         quote! {
@@ -185,7 +187,7 @@ fn gen_impl(variant_slice: &[VariantInfo], default_variant: Option<syn::Ident>) 
                 pub fn try_from(enum_: #c_name) -> Result<Self> {
                     match enum_ {
                         #(#try_from_arms)*
-                        _ => Err(Error::from_kind(ErrorKind::UnexpectedVariant)),
+                        _ => Err(Error::from_kind(ErrorKind::UnexpectedVariant(enum_))),
                     }
                 }
             }
