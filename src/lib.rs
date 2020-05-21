@@ -179,15 +179,15 @@ fn gen_impl(variant_slice: &[VariantInfo], default_variant: Option<syn::Ident>) 
                         #(#for_arms)*
                     }
                 }
+            }
 
-                /// Waiting for `TryFrom` to be stable. In the meantime, we do this.
-                ///
-                /// # Errors
-                /// * `UnexpectedVariant`, for which you can read the docs for
-                pub fn try_from(enum_: #c_name) -> Result<Self> {
-                    match enum_ {
+            impl ::std::convert::TryFrom<#c_name> for #rust_name {
+                type Error = NvmlError;
+
+                fn try_from(error: #c_name) -> Result<Self, Self::Error> {
+                    match error {
                         #(#try_from_arms)*
-                        _ => Err(Error::from_kind(ErrorKind::UnexpectedVariant(enum_))),
+                        _ => Err(NvmlError::UnexpectedVariant(error)),
                     }
                 }
             }
