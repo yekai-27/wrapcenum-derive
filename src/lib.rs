@@ -1,182 +1,82 @@
 /*!
-A quick and dirty derive macro for use in [nvml-wrapper](https://github.com/Cldfire/nvml-wrapper).
-It is **not for use by the general public**, a status that may or may not change
-in the future.
+Internal macro used in [nvml-wrapper](https://github.com/Cldfire/nvml-wrapper).
+
+This macro is tied to the crate and is not meant for use by the general public.
+
+Its purpose is to auto-generate both a `TryFrom` implementation converting an `i32`
+into a Rust enum (specifically for converting a C enum represented as an integer that
+has come over FFI) and an `as_c` method for converting the Rust enum back into an `i32`.
+
+It wouldn't take much effort to turn this into something usable by others; if you're
+interested feel free to contribute or file an issue asking me to put some work into it.
 */
 
-#![recursion_limit = "1024"]
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::{quote, ToTokens};
+use syn;
 
-extern crate proc_macro;
-extern crate syn;
-#[macro_use]
-extern crate quote;
+use darling::{ast, FromVariant, FromDeriveInput};
 
-use proc_macro::TokenStream;
-use quote::Tokens;
-use syn::MetaItem::*;
-use syn::Lit::*;
-use syn::Body::*;
-use syn::NestedMetaItem::*;
-
-// TODO: Tests.
-// TODO: Maybe clean this up if I feel like it.
-// TODO: Panic if `c_variant` cannot be found in `wrap` on an enum variant.
-// right now it just appends `this_is_not_to_be_returned` to the name
-
-// THIS MUST BE USED TO WRAP ENUMS IN CONSTANT FORM
-// See https://docs.rs/bindgen/0.25.1/bindgen/struct.Builder.html#method.constified_enum
-// REASON: https://github.com/rust-lang/rust/issues/36927
-//
-// Use it like this
-//
-// #[derive(EnumWrapper)]
-// #[wrap(c_enum = "libSomeEnum_t")]
-// // This is used to map an unknown variant returned from C to a default value.
-// #[wrap(default = "LIB_COUNT_VARIANT")] (optional)
-// pub enum SomeEnum {
-//     #[wrap(c_variant = LIB_SOME_VARIANT)]
-//     SomeVariant,
-//     #[wrap(c_variant = LIB_OTHER_VARIANT)]
-//     OtherVariant,
-// }
-
-struct VariantInfo {
-    rust_name: syn::Ident,
-    rust_variant: syn::Ident,
-    c_name: syn::Ident,
-    c_variant: syn::Ident,
+/// Handles parsing attributes on the enum itself
+#[derive(Debug, FromDeriveInput)]
+#[darling(attributes(wrap), supports(enum_any))]
+struct EnumReceiver {
+    ident: Ident,
+    data: ast::Data<VariantReceiver, ()>,
+    /// The ident of the C enum to be wrapped
+    c_enum: String,
 }
 
-impl VariantInfo {
-    fn from(variant: syn::Variant, c_name: syn::Ident, rust_name: syn::Ident) -> Self {
-        let c_variant: syn::Ident = variant_attr_val_for_str("c_variant", &variant).into();
+impl ToTokens for EnumReceiver {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let EnumReceiver {
+            ref ident,
+            ref data,
+            ref c_enum,
+        } = *self;
 
-        VariantInfo {
-            rust_name: rust_name,
-            rust_variant: variant.ident,
-            c_name: c_name,
-            c_variant: c_variant,
-        }
-    }
+        let join_c_name_and_variant = |name: &str, variant: &str| {
+            Ident::new(&format!("{}_{}", &name, variant), Span::call_site())
+        };
 
-    fn tokens_for_as_c(&self) -> Tokens {
-        let ref rust_name = self.rust_name;
-        let ref rust_variant = self.rust_variant;
-        let ref c_name = self.c_name;
-        let ref c_variant = self.c_variant;
+        let c_name = Ident::new(c_enum, Span::call_site());
+        let rust_name = ident;
 
-        let c_joined = syn::Ident::new(c_name.to_string() + "_" + 
-            &c_variant.to_string());
+        let variants = data
+            .as_ref()
+            .take_enum()
+            .expect("should never be a struct");
 
-        quote! {
-            #rust_name::#rust_variant => #c_joined,
-        }
-    }
+        let as_arms = variants
+            .iter()
+            .map(|v| {
+                let c_joined = join_c_name_and_variant(&c_name.to_string(), &v.c_variant);
+                let v_ident = &v.ident;
 
-    fn tokens_for_from_c(&self) -> Tokens {
-        let ref rust_name = self.rust_name;
-        let ref rust_variant = self.rust_variant;
-        let ref c_name = self.c_name;
-        let ref c_variant = self.c_variant;
+                quote! {
+                    #rust_name::#v_ident => #c_joined,
+                }
+            })
+            .collect::<Vec<_>>();
 
-        let c_joined = syn::Ident::new(c_name.to_string() + "_" + 
-            &c_variant.to_string());
+        let try_from_arms = variants
+            .into_iter()
+            .map(|v| {
+                let c_joined = join_c_name_and_variant(&c_name.to_string(), &v.c_variant);
+                let v_ident = &v.ident;
 
-        quote! {
-            #c_joined => #rust_name::#rust_variant,
-        }
-    }
+                quote! {
+                    #c_joined => Ok(#rust_name::#v_ident),
+                }
+            })
+            .collect::<Vec<_>>();
 
-    fn tokens_for_try_from_c(&self) -> Tokens {
-        let ref rust_name = self.rust_name;
-        let ref rust_variant = self.rust_variant;
-        let ref c_name = self.c_name;
-        let ref c_variant = self.c_variant;
-
-        let c_joined = syn::Ident::new(c_name.to_string() + "_" +
-            &c_variant.to_string());
-
-        quote! {
-            #c_joined => Ok(#rust_name::#rust_variant),
-        }
-    }
-}
-
-#[proc_macro_derive(EnumWrapper, attributes(wrap))]
-pub fn enum_wrapper(input: TokenStream) -> TokenStream {
-    let source = input.to_string();
-    let ast = syn::parse_derive_input(&source).expect("Could not parse derive input");
-
-    let expanded = wrap_enum(ast);
-
-    expanded.parse().expect("Could not parse expanded output")
-}
-
-fn wrap_enum(ast: syn::DeriveInput) -> Tokens {
-    let rust_name = &ast.ident;
-    let c_name: syn::Ident = attr_val_for_str("c_enum", &ast).unwrap().into();
-    let default_variant = attr_val_for_str("default", &ast);
-
-    match ast.body {
-        Enum(variant_vec) => {
-            let info_vec: Vec<VariantInfo> = variant_vec.iter().map(|v| {
-                VariantInfo::from(v.clone(), c_name.clone(), rust_name.clone())
-            }).collect();
-            
-            if let Some(v) = default_variant {
-                gen_impl(&info_vec[..], Some(v.into()))
-            } else {
-                gen_impl(&info_vec[..], None)
-            }
-        },
-        Struct(_) => panic!("This derive macro does not support structs"),
-    }
-
-}
-
-fn gen_impl(variant_slice: &[VariantInfo], default_variant: Option<syn::Ident>) -> Tokens {
-    let ref c_name = variant_slice[0].c_name;
-    let ref rust_name = variant_slice[0].rust_name;
-
-    let for_arms: Vec<Tokens> = variant_slice.iter().map(|v| {
-        v.tokens_for_as_c()
-    }).collect();
-
-    let from_arms: Vec<Tokens> = variant_slice.iter().map(|v| {
-        v.tokens_for_from_c()
-    }).collect();
-
-    let try_from_arms: Vec<Tokens> = variant_slice.iter().map(|v| {
-        v.tokens_for_try_from_c()
-    }).collect();
-
-    if let Some(v) = default_variant {
-        quote! {
+        tokens.extend(quote! {
             impl #rust_name {
-                /// Returns the C enum variant equivalent for the given Rust enum variant.
+                /// Returns the C enum variant equivalent for the given Rust enum variant
                 pub fn as_c(&self) -> #c_name {
                     match *self {
-                        #(#for_arms)*
-                    }
-                }
-            }
-
-            impl From<#c_name> for #rust_name {
-                fn from(enum_: #c_name) -> Self {
-                    match enum_ {
-                        #(#from_arms)*
-                        _ => #c_name::#v
-                    }
-                }
-            }
-        }
-    } else {
-        quote! {
-            impl #rust_name {
-                /// Returns the C enum variant equivalent for the given Rust enum variant.
-                pub fn as_c(&self) -> #c_name {
-                    match *self {
-                        #(#for_arms)*
+                        #(#as_arms)*
                     }
                 }
             }
@@ -184,100 +84,30 @@ fn gen_impl(variant_slice: &[VariantInfo], default_variant: Option<syn::Ident>) 
             impl ::std::convert::TryFrom<#c_name> for #rust_name {
                 type Error = NvmlError;
 
-                fn try_from(error: #c_name) -> Result<Self, Self::Error> {
-                    match error {
+                fn try_from(data: #c_name) -> Result<Self, Self::Error> {
+                    match data {
                         #(#try_from_arms)*
-                        _ => Err(NvmlError::UnexpectedVariant(error)),
+                        _ => Err(NvmlError::UnexpectedVariant(data)),
                     }
                 }
             }
-        }
+        });
     }
 }
 
- fn attr_val_for_str<S: AsRef<str>>(string: S, ast: &syn::DeriveInput) -> Option<String> {
-    let mut return_string: Option<String> = None;
-    // Iterate through attributes on this variant, match on the MetaItem
-    ast.attrs.iter().find(|ref a| match a.value {
-        // If this value is a List...
-        List(ref ident, ref nested_items_vec) => {
-            let mut real_return_val = false;
-            // If the ident matches our derive's prefix...
-            if ident == "wrap" {
-                // Iterate through nested attributes in this attribute and match on NestedMetaItem...
-                let item = nested_items_vec.iter().find(|ref i| match i {
-                    // If it's another MetaItem
-                    &&&MetaItem(ref item) => match item {
-                        // If it's a name value pair
-                        &NameValue(ref ident, ref lit) => {
-                            let mut return_val = false;
-                            // If the name matches what was passed in for us to look for
-                            if ident == string.as_ref() {
-                                // Match on the value paired with the name
-                                return_string = match lit {
-                                    // If it's a string, return it. Then go beg for mercy after
-                                    // having read through this code.
-                                    &Str(ref the_value, _) => Some(the_value.to_string()),
-                                    _ => panic!("Attribute value was not a string")
-                                };
-                                return_val = true;
-                            }
-                            return_val
-                        },
-                        _ => panic!("Attribute was was not a namevalue"),
-                    },
-                    _ => false,
-                });
-
-                if let Some(_) = item {
-                    real_return_val = true;
-                }
-            }
-            real_return_val
-        },
-        _ => false,
-    });
-
-    return_string
+/// Handles parsing attributes on enum variants
+#[derive(Debug, FromVariant)]
+#[darling(attributes(wrap))]
+struct VariantReceiver {
+    ident: Ident,
+    /// The ident of the C enum variant this Rust variant maps to
+    c_variant: String
 }
 
-// TODO: This should at least be cleaned up to be like the above
-fn variant_attr_val_for_str<S: AsRef<str>>(string: S, variant: &syn::Variant) -> String {
-    let mut return_string = "this_is_not_to_be_returned".to_string();
-    variant.attrs.iter().find(|ref a| match a.value {
-        List(ref ident, ref nested_items_vec) => {
-            let mut real_return_val = false;
-            if ident == "wrap" {
-                let item = nested_items_vec.iter().find(|ref i| match i {
-                    &&&MetaItem(ref item) => match item {
-                        &NameValue(ref ident, ref lit) => {
-                            let mut return_val = false;
-                            if ident == string.as_ref() {
-                                return_string = match lit {
-                                    &Str(ref the_value, _) => the_value.to_string(),
-                                    _ => panic!("Attribute value was not a string")
-                                };
-                                return_val = true;
-                            }
-                            return_val
-                        },
-                        _ => panic!("Attribute was was not a namevalue"),
-                    },
-                    _ => false,
-                });
+#[proc_macro_derive(EnumWrapper, attributes(wrap))]
+pub fn wrapcenum_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ast = syn::parse(input).unwrap();
+    let receiver = EnumReceiver::from_derive_input(&ast).unwrap();
 
-                if let Some(_) = item {
-                    real_return_val = true;
-                }
-            }
-            real_return_val
-        },
-        _ => false,
-    });
-
-    if return_string != "this_is_not_supposed_to_be_returned" {
-        return_string
-    } else {
-        panic!("Could not find attribute for {:?}", string.as_ref())
-    }
+    quote!(#receiver).into()
 }

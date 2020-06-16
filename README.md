@@ -1,22 +1,27 @@
 # wrapcenum-derive
 
-A quick and dirty derive macro for use in [nvml-wrapper](https://github.com/Cldfire/nvml-wrapper).
-It is **not for use by the general public**, a status that may or may not change
-in the future.
+Internal macro used in [nvml-wrapper](https://github.com/Cldfire/nvml-wrapper).
 
-## License
+This macro is tied to the crate and is not meant for use by the general public.
 
-Licensed under either of
+Its purpose is to auto-generate both a `TryFrom` implementation converting an `i32`
+into a Rust enum (specifically for converting a C enum represented as an integer that
+has come over FFI) and an `as_c` method for converting the Rust enum back into an `i32`.
 
-* Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-* MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+It wouldn't take much effort to turn this into something usable by others; if you're
+interested feel free to contribute or file an issue asking me to put some work into it.
 
-at your option.
+#### License
 
-### Contribution
+<sup>
+Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
+2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
+</sup>
 
+<br>
+
+<sub>
 Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.
+for inclusion in this crate by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.
+</sub>

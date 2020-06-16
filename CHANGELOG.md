@@ -2,6 +2,20 @@
 
 This file describes the changes / additions / fixes between macro releases.
 
+## 0.4.0 (releasted 2020-06-15)
+
+### Release Summary
+
+Re-wrote the macro to use `darling` and the `1.0` versions of `syn` and `quote`.
+
+### Changes
+
+The error type that is expected to be in scope is now `NvmlError`.
+
+### Removals
+
+* Support for the `default` attribute has been removed
+
 ## 0.3.0 (released 2017-07-20)
 
 ### Changes
