@@ -2,7 +2,18 @@
 
 This file describes the changes / additions / fixes between macro releases.
 
-## 0.4.0 (releasted 2020-06-15)
+## 0.4.1 (released 2024-02-10)
+
+### Release Summary
+
+Bumped dependency versions to the latest. ([#2](https://github.com/Cldfire/wrapcenum-derive/pull/2) - @KYovchevski)
+
+### Dependencies
+
+* `syn`: `1.0` -> `2.0`
+* `darling`: `0.10` -> `0.20`
+
+## 0.4.0 (released 2020-06-15)
 
 ### Release Summary
 
